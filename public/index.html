@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Air Quality & Weather | Forecast Dashboard</title>
+  
+  <!-- Modern Clean Fonts: Inter, Space Grotesk, JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Chart.js and jsPDF -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="theme-dark">
+  <!-- Clean Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <div class="brand-logo">
+          <span class="brand-icon">⚡</span>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">AirQuality</div>
+          <div class="brand-subtitle">Air Quality & Weather Dashboard</div>
+        </div>
+      </div>
+
+      <div class="nav-controls">
+        <div class="location-badge" id="currentLocationBadge" title="Selected city">
+          <span class="status-dot"></span>
+          <span id="activeCityName">Delhi</span>
+          <span class="location-name-short" id="activeRegionName">Delhi</span>
+        </div>
+
+        <button class="btn btn-outline btn-sm" id="btnThemeToggle" title="Toggle Light/Dark Theme">
+          <span id="themeIcon">☀️</span>
+        </button>
+
+        <button class="btn btn-secondary btn-sm" id="btnTrainModel" title="Fetch Open-Meteo history and train AQI and PM2.5 models">
+          <span>🧠</span> Train ML Model
+        </button>
+
+        <button class="btn btn-primary btn-sm" id="btnExportPdf">
+          <span>📄</span> Download Report (PDF)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Container -->
+  <main class="main-content">
+    <!-- Search & Quick Selection -->
+    <section class="control-panel glass-card">
+      <div class="search-row">
+        <div class="search-input-wrapper">
+          <span class="search-icon">🔍</span>
+          <input 
+            type="text" 
+            id="citySearchInput" 
+            placeholder="Enter a city (e.g., Delhi, Mumbai, London, New York)..."
+            autocomplete="off"
+          >
+          <button class="btn-clear" id="btnClearSearch" style="display: none;">&times;</button>
+          <div class="search-suggestions" id="searchSuggestions"></div>
+        </div>
+
+        <button class="btn btn-primary" id="btnSearch">
+          Search
+        </button>
+
+        <button class="btn btn-secondary" id="btnGeoLocation" title="Use GPS Location">
+          <span>📍</span> My Location
+        </button>
+
+        <button class="btn btn-outline" id="btnRefresh" title="Refresh Live Data">
+          <span>🔄</span> Refresh
+        </button>
+      </div>
+
+      <!-- Quick Preset Cities -->
+      <div class="quick-hubs">
+        <span class="hubs-label">Popular Cities:</span>
+        <button class="hub-pill" data-city="Mumbai">Mumbai</button>
+        <button class="hub-pill active" data-city="Delhi">Delhi</button>
+        <button class="hub-pill" data-city="Bengaluru">Bangalore</button>
+        <button class="hub-pill" data-city="Pune">Pune</button>
+        <button class="hub-pill" data-city="Kolkata">Kolkata</button>
+        <button class="hub-pill" data-city="Chennai">Chennai</button>
+        <button class="hub-pill" data-city="Hyderabad">Hyderabad</button>
+        <button class="hub-pill" data-city="Nashik">Nashik</button>
+        <button class="hub-pill" data-city="London">London</button>
+        <button class="hub-pill" data-city="New York">New York</button>
+      </div>
+    </section>
+
+    <!-- Global Loading Spinner Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+      <div class="loader-card glass-card">
+        <div class="spinner-ring"></div>
+        <div class="loader-title">Fetching Weather & Air Quality...</div>
+        <div class="loader-sub" id="loaderSubtext">Loading AQI, pollutant, and weather data...</div>
+      </div>
+    </div>
+
+    <!-- Error Banner -->
+    <div id="errorBanner" class="alert-banner alert-danger" style="display: none;">
+      <span class="alert-icon">⚠️</span>
+      <span id="errorMessage">Unable to fetch weather telemetry.</span>
+    </div>
+
+    <!-- 5 Clean Metric Cards -->
+    <section class="hero-ribbon" id="heroMetrics">
+      <!-- 1. Current Weather -->
+      <div class="metric-glass-card">
+        <div class="metric-header">
+          <span class="metric-tag">CURRENT WEATHER</span>
+          <span class="badge-vc" id="badgeWeatherCondition">?</span>
+        </div>
+        <div class="metric-main-value"><span id="valTemp">?</span><span class="unit"> C</span></div>
+        <div class="metric-sub-row">
+          <span>Wind: <strong id="valWindMs">?</strong> m/s</span>
+          <span>Humidity: <strong id="valHumidity">?</strong>%</span>
+        </div>
+        <div class="metric-footer" id="valWeatherSourceStatus">Open-Meteo current weather</div>
+      </div>
+
+      <!-- 2. Current AQI -->
+      <div class="metric-glass-card highlight-card">
+        <div class="metric-header">
+          <span class="metric-tag">AIR QUALITY (AQI)</span>
+          <span class="badge-aqi" id="badgeAqiCategory">?</span>
+        </div>
+        <div class="aqi-display-row">
+          <div class="aqi-big-number" id="valUsAqi">?</div>
+          <div class="aqi-meta">
+            <div class="aqi-scale">US Standard AQI</div>
+            <div class="naqi-sub">India AQI: <strong id="valIndiaAqi">?</strong></div>
+          </div>
+        </div>
+        <div class="metric-footer">
+          Main Pollutant: <strong id="valPrimaryPollutant" class="text-warning">?</strong>
+        </div>
+      </div>
+
+      <!-- 3. PM2.5 Level -->
+      <div class="metric-glass-card">
+        <div class="metric-header">
+          <span class="metric-tag">PM2.5 LEVEL</span>
+          <span class="badge-ratio" id="badgeWhoExceed">?</span>
+        </div>
+        <div class="metric-main-value">
+          <span id="valPm25Conc">?</span> <span class="unit">µg/m³</span>
+        </div>
+        <div class="metric-sub-row">
+          <span>PM10: <strong id="valPm10Conc">? ug/m3</strong></span>
+          <span>NO₂: <strong id="valNo2Conc">? ug/m3</strong></span>
+        </div>
+        <div class="metric-footer">
+          Aerosol optical depth: <strong id="valAod">?</strong>
+        </div>
+      </div>
+
+      <!-- 4. Weather Details -->
+      <div class="metric-glass-card">
+        <div class="metric-header">
+          <span class="metric-tag">WEATHER DETAILS</span>
+          <span class="badge-vc">NOW</span>
+        </div>
+        <div class="metric-main-value"><span id="valWeatherCondition">?</span></div>
+        <div class="metric-sub-row">
+          <span>Pressure: <strong id="valPressure">?</strong> hPa</span>
+          <span>Cloud cover: <strong id="valCloudCover">?</strong>%</span>
+        </div>
+        <div class="metric-footer">Current conditions for the selected city</div>
+      </div>
+
+      <!-- 5. AQI Model Status -->
+      <div class="metric-glass-card">
+        <div class="metric-header">
+          <span class="metric-tag">AQI MODEL</span>
+          <span class="badge-model-status" id="badgeModelStatus">Loading</span>
+        </div>
+        <div class="metric-main-value">
+          <span id="valModelStatus">—</span>
+        </div>
+        <div class="metric-sub-row">
+          <span>Target: <strong>Open-Meteo AQI</strong></span>
+          <span>Input history: <strong>Hourly</strong></span>
+        </div>
+        <div class="metric-footer" id="valModelStatusDetail">Training status</div>
+      </div>
+    </section>
+
+    <!-- Clean Navigation Tabs -->
+    <nav class="research-tabs-nav">
+      <button class="tab-btn active" data-tab="tab-predictions">
+        <span class="tab-icon">🔮</span> 7-Day AQI & Weather Forecast
+      </button>
+      <button class="tab-btn" data-tab="tab-agents"><span class="tab-icon">AI</span> AI Agents & Roles</button>
+      <button class="tab-btn" data-tab="tab-chemistry">
+        <span class="tab-icon">🧪</span> Pollutants Breakdown
+      </button>
+      <button class="tab-btn" data-tab="tab-health">
+        <span class="tab-icon">🏥</span> Health & Precautions
+      </button>
+      <button class="tab-btn" data-tab="tab-model">
+        <span class="tab-icon">📊</span> Accuracy & Summary
+      </button>
+    </nav>
+
+    <!-- Tab 1: 7-Day AQI & Weather Forecast -->
+    <section class="tab-pane active" id="tab-predictions">
+      <div class="pane-grid">
+        <!-- Daily Forecast Cards for Next Week -->
+        <div class="glass-card col-span-12">
+          <div class="card-header">
+            <div class="card-title-group">
+              <h3 class="card-title">7-Day AQI & Weather Outlook</h3>
+              <p class="card-subtitle">AQI and PM2.5 from the trained model; weather from the forecast feed</p>
+            </div>
+            <span class="badge-research">FULL 7 DAYS</span>
+          </div>
+          <div class="daily-cards-grid" id="dailyForecastCards"></div>
+        </div>
+
+        <!-- Main 7-Day Hourly Trend Chart -->
+        <div class="glass-card col-span-8">
+          <div class="card-header">
+            <div class="card-title-group">
+              <h3 class="card-title">7-Day Hourly Prediction Trend</h3>
+              <p class="card-subtitle">168-hour ML forecast with empirical holdout residual intervals</p>
+            </div>
+            <div class="chart-toggles">
+              <button class="btn-toggle active" id="toggleAqiTrajectory">AQI Trend</button>
+              <button class="btn-toggle" id="togglePm25Trajectory">PM2.5 Trend</button>
+              <button class="btn-toggle" id="toggleConfidenceBand">Confidence Range</button>
+            </div>
+          </div>
+          <div class="chart-box" style="height: 380px;">
+            <canvas id="predictionChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Weekly Summary & Accuracy -->
+        <div class="glass-card col-span-4">
+          <div class="card-header">
+            <h3 class="card-title">Forecast Highlights</h3>
+            <span class="badge-research">XGBOOST ML</span>
+          </div>
+          <div class="metrics-list">
+            <div class="metric-row">
+              <span class="metric-label">Holdout R²</span>
+              <strong class="metric-val" id="valModelR2">—</strong>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Holdout MAE</span>
+              <strong class="metric-val" id="valModelMae">— AQI</strong>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Expected Error (RMSE)</span>
+              <strong class="metric-val" id="valModelRmse">— AQI</strong>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Direction accuracy</span>
+              <strong class="metric-val" id="valModelDirAcc">—</strong>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Model Architecture</span>
+              <strong class="metric-val text-primary" id="valModelArch">Checking</strong>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Validation</span>
+              <strong class="metric-val" id="valModelMethod">—</strong>
+            </div>
+          </div>
+
+          <div class="card-divider"></div>
+
+          <h4 class="sub-heading">Model Status</h4>
+          <div class="driver-tags" id="driverTagsList">
+            <div class="driver-tag"><span class="driver-dot warning"></span> Model validation details load with the city model.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI agents and analysis roles -->
+    <section class="tab-pane" id="tab-agents">
+      <div class="pane-grid">
+        <div class="glass-card col-span-12">
+          <div class="card-header">
+            <div class="card-title-group">
+              <h3 class="card-title">AI Agents & What They Do</h3>
+              <p class="card-subtitle">The project?s analysis flow, from city data to forecasts and guidance</p>
+            </div>
+          </div>
+          <div class="agent-roles-grid">
+            <article class="agent-role-card">
+              <span class="agent-role-step">01</span>
+              <h4>AQI & Weather Data Agent</h4>
+              <p>Loads current AQI, pollutant measurements, weather conditions, and forecast data from Open-Meteo for the selected city.</p>
+            </article>
+            <article class="agent-role-card">
+              <span class="agent-role-step">02</span>
+              <h4>AQI Prediction Agent</h4>
+              <p>Uses the city?s trained XGBoost models to forecast AQI and PM2.5. It reports no AQI prediction when a compatible model is unavailable.</p>
+            </article>
+            <article class="agent-role-card">
+              <span class="agent-role-step">03</span>
+              <h4>Health Guidance Agent</h4>
+              <p>Summarizes general precautions based on the current AQI category. Its guidance is informational, not a diagnosis.</p>
+            </article>
+            <article class="agent-role-card">
+              <span class="agent-role-step">04</span>
+              <h4>Research Summary Agent</h4>
+              <p>Combines the selected city?s AQI, weather, forecast availability, and model validation details into the dashboard summary and report.</p>
+            </article>
+            <article class="agent-role-card">
+              <span class="agent-role-step">05</span>
+              <h4>AQI & Weather Assistant</h4>
+              <p>Answers questions using the selected city?s current data. It uses local Ollama when available and a built-in response helper otherwise.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Pollutants Breakdown -->
+    <section class="tab-pane" id="tab-chemistry">
+      <div class="pane-grid">
+        <!-- Radar Chart -->
+        <div class="glass-card col-span-6">
+          <div class="card-header">
+            <h3 class="card-title">Pollutants Balance Radar</h3>
+            <p class="card-subtitle">Relative distribution of airborne pollutants</p>
+          </div>
+          <div class="chart-box" style="height: 340px;">
+            <canvas id="speciationRadarChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Bar Comparison vs WHO Limits -->
+        <div class="glass-card col-span-6">
+          <div class="card-header">
+            <h3 class="card-title">Current Levels vs WHO Safe Limits</h3>
+            <p class="card-subtitle">Comparing measured levels against World Health Organization guidelines</p>
+          </div>
+          <div class="chart-box" style="height: 340px;">
+            <canvas id="whoComparisonBarChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Clean Pollutant Table -->
+        <div class="glass-card col-span-12">
+          <div class="card-header">
+            <h3 class="card-title">Pollutants Measurement Table</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="academic-table" id="chemicalInventoryTable">
+              <thead>
+                <tr>
+                  <th>Pollutant</th>
+                  <th>Formula</th>
+                  <th>Current Level</th>
+                  <th>WHO Safe Limit</th>
+                  <th>Safe Limit Exceeded</th>
+                  <th>Sub-Index</th>
+                  <th>Health Impact</th>
+                </tr>
+              </thead>
+              <tbody id="chemicalTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: Health Guidance -->
+    <section class="tab-pane" id="tab-health">
+      <div class="pane-grid">
+        <div class="glass-card col-span-12">
+          <div class="card-header">
+            <h3 class="card-title">General Guidance Based on Current AQI</h3>
+            <span class="badge-ratio" id="healthSeverityBadge">?</span>
+          </div>
+          <p class="health-pathology-text" id="healthPathologyText">Check local public-health guidance.</p>
+          <p class="card-subtitle">This information is general guidance and is not medical advice.</p>
+        </div>
+        <div class="glass-card col-span-12">
+          <div class="card-header"><h3 class="card-title">Groups Who May Need Extra Care</h3></div>
+          <div class="cohorts-grid" id="cohortsGrid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 6: Accuracy & Research Summary -->
+    <section class="tab-pane" id="tab-model">
+      <div class="pane-grid">
+        <!-- ML Model Validation Card -->
+        <div class="glass-card col-span-6">
+          <div class="card-header">
+            <h3 class="card-title">Forecast Model Validation</h3>
+            <span class="badge-research">CHRONOLOGICAL HOLDOUT</span>
+          </div>
+          <div class="formula-box">
+            <div class="formula-title">Training target</div>
+            <div class="formula-math">Open-Meteo hourly US AQI + PM2.5</div>
+            <p class="formula-explanation">
+              Scores are measured on a held-out time period. No accuracy numbers are shown until a city model has been trained.
+            </p>
+          </div>
+          <div class="metrics-list" style="margin-top: 15px;">
+            <div class="metric-row">
+              <span class="metric-label">Training city</span>
+              <strong class="metric-val" id="modelCityVal">—</strong>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Training pairs</span>
+              <strong class="metric-val" id="modelTrainRowsVal">—</strong>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Holdout pairs</span>
+              <strong class="metric-val" id="modelTestRowsVal">—</strong>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Persistence baseline MAE</span>
+              <strong class="metric-val" id="modelPersistenceMaeVal">—</strong>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Trained at</span>
+              <strong class="metric-val" id="modelTrainedAtVal">—</strong>
+            </div>
+          </div>
+          <h4 class="sub-heading">AQI validation by forecast horizon</h4>
+          <div id="modelHorizonMetrics">No trained model metrics available.</div>
+        </div>
+
+        <!-- Feature Importance Chart -->
+        <div class="glass-card col-span-6">
+          <div class="card-header">
+            <h3 class="card-title">What Drives the Prediction?</h3>
+            <span class="badge-research">FEATURE WEIGHTS</span>
+          </div>
+          <div class="chart-box" style="height: 320px;">
+            <canvas id="featureImportanceChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Research Paper Abstract -->
+        <div class="glass-card col-span-12">
+          <div class="card-header">
+            <h3 class="card-title">Generated Research Paper Summary</h3>
+            <button class="btn btn-outline btn-sm" id="btnCopyAbstract">📋 Copy Summary</button>
+          </div>
+          <div class="abstract-paper-box">
+            <h4 class="abstract-title" id="abstractPaperTitle">AQI and Weather Forecasting Study</h4>
+            <div class="abstract-authors" id="abstractPaperAuthors">Air Quality and Weather Research Platform</div>
+            <p class="abstract-body" id="abstractPaperBody"></p>
+            <div class="abstract-keywords" id="abstractPaperKeywords"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Dockable AQI & Weather Assistant Chatbot -->
+  <aside class="chat-dock" id="chatDock">
+    <div class="chat-dock-header" id="chatDockHeader">
+      <div class="chat-title-group">
+        <span class="chat-status-dot"></span>
+        <strong>AQI & Weather Assistant</strong>
+        <span class="chat-engine-badge" id="chatEngineBadge">AI Ready</span>
+      </div>
+      <div class="chat-header-actions">
+        <button class="btn-chat-toggle" id="btnChatMinimize" title="Minimize Chat">−</button>
+      </div>
+    </div>
+
+    <div class="chat-dock-body" id="chatDockBody">
+      <!-- Chat Messages Container -->
+      <div class="chat-messages" id="chatMessagesContainer">
+        <div class="chat-msg system">
+          <div class="msg-avatar">AQ</div>
+          <div class="msg-bubble">
+            <p><strong>Hi! I can help with AQI and weather.</strong></p>
+            <p>Choose a question for the selected city, or type your own below.</p>
+            <div class="preset-chips" id="chatSuggestions"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Input Area -->
+      <form class="chat-input-form" id="chatInputForm">
+        <input 
+          type="text" 
+          id="chatInput" 
+          placeholder="Ask about this city AQI, pollutants, weather, or forecast..." 
+          autocomplete="off"
+        >
+        <button type="submit" class="btn-send" id="btnSendMessage" title="Send Message">
+          <span>➤</span>
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- Floating Toggle Button for Chatbot (when minimized) -->
+  <button class="chat-floating-btn" id="chatFloatingBtn" title="Open AQI & Weather Assistant" style="display: none;">
+    <span>💬</span>
+    <span class="floating-badge">AQI & WEATHER</span>
+  </button>
+
+  <!-- Application Controller Script -->
+  <script src="js/app.js"></script>
+</body>
+</html>
